@@ -1,10 +1,14 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
+import ReactDOM from "react-dom/client"
+import { BrowserRouter, Route, Routes } from "react-router"
 import './index.css'
-import App from './App.tsx'
+import BasePage from "./pages/BasePage"
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
+const root = document.getElementById('root') as HTMLElement
+
+ReactDOM.createRoot(root).render(
+  <BrowserRouter>
+    <Routes>
+      <Route path="/" element={<BasePage />} />
+    </Routes>
+  </BrowserRouter>
 )
