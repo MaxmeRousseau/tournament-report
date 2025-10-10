@@ -67,6 +67,223 @@ show_logs() {
   fi
 }
 
+# détecte une commande prisma utilisable (prisma, npx prisma, bunx prisma)
+detect_prisma_cmd() {
+  # Prefer running prisma inside the server container if a suitable service exists and is running.
+  # Looks for a service name commonly used for the server: server, api, app.
+  local svc cid
+  svc=$(list_services | grep -E "server|api|app" | head -n1 || true)
+  if [ -n "$svc" ]; then
+    # check container is running for that service
+    cid=$(docker ps --filter "name=$svc" --format '{{.ID}}' | head -n1 || true)
+    if [ -n "$cid" ]; then
+      # use docker compose exec to run prisma inside the container
+      # return the exec prefix (do NOT append prisma here) so caller can try npx/bunx fallbacks
+      echo "$DCMD exec -it $svc"
+      return 0
+    else
+      echo "Service '$svc' trouvé dans le compose mais le container ne semble pas démarré." >&2
+      # fall through to local detection
+    fi
+  fi
+
+  # Fallback: run prisma locally via prisma, npx or bunx
+  if command -v bunx >/dev/null 2>&1; then
+    echo "bunx prisma"
+  elif command -v npx >/dev/null 2>&1; then
+    echo "npx prisma"
+  elif command -v prisma >/dev/null 2>&1; then
+    echo "prisma"
+  else
+    echo ""
+  fi
+}
+
+# check if a command exists inside a container (using shell -c to let shell resolve PATH)
+container_has_cmd() {
+  # $1 = container exec prefix (e.g. "$DCMD exec -it server"), $2 = command to check (just the executable name)
+  local prefix="$1" cmd="$2"
+  # run a shell inside the container that checks for the command; hide stderr
+  if $prefix sh -c "command -v $cmd >/dev/null 2>&1"; then
+    return 0
+  fi
+  return 1
+}
+
+create_migration() {
+  local prisma
+  prisma=$(detect_prisma_cmd)
+  if [ -z "$prisma" ]; then
+    echo "Commande prisma introuvable. Installez prisma ou utilisez npx/bunx." >&2
+    return 1
+  fi
+
+  read -r -p "Nom de la migration (ex: add-users-table) : " name
+  if [ -z "${name:-}" ]; then
+    echo "Nom vide. Annulation."
+    return 1
+  fi
+
+  echo "Création de la migration: $name"
+  # If runner is a container exec prefix (starts with $DCMD exec), try multiple in-container runners
+  if [[ "$prisma" == "$DCMD exec"* ]]; then
+    # prefer checking before running to avoid loud OCI exec failures
+    if container_has_cmd "$prisma" bunx; then
+      if $prisma bunx prisma migrate dev --name "$name" --create-only; then
+        return 0
+      fi
+    fi
+    if container_has_cmd "$prisma" npx; then
+      if $prisma npx prisma migrate dev --name "$name" --create-only; then
+        return 0
+      fi
+    fi
+    if container_has_cmd "$prisma" prisma; then
+      if $prisma prisma migrate dev --name "$name" --create-only; then
+        return 0
+      fi
+    fi
+
+    # nothing usable inside the container: fall back to local execution if possible
+    echo "Aucune commande prisma trouvée dans le container pour le service, tentative locale..."
+    if command -v prisma >/dev/null 2>&1; then
+      eval "prisma migrate dev --name \"$name\" --create-only"
+      return $?
+    elif command -v npx >/dev/null 2>&1; then
+      eval "npx prisma migrate dev --name \"$name\" --create-only"
+      return $?
+    elif command -v bunx >/dev/null 2>&1; then
+      eval "bunx prisma migrate dev --name \"$name\" --create-only"
+      return $?
+    else
+      echo "Commande prisma introuvable localement aussi. Installez prisma ou utilisez npx/bunx." >&2
+      return 1
+    fi
+  else
+    # shellcheck disable=SC2086
+    eval "$prisma migrate dev --name \"$name\" --create-only"
+  fi
+}
+
+apply_migrations() {
+  local prisma
+  prisma=$(detect_prisma_cmd)
+  if [ -z "$prisma" ]; then
+    echo "Commande prisma introuvable. Installez prisma ou utilisez npx/bunx." >&2
+    return 1
+  fi
+
+  echo "Application de toutes les migrations pending..."
+  if [[ "$prisma" == "$DCMD exec"* ]]; then
+    if container_has_cmd "$prisma" bunx; then
+      if $prisma bunx prisma migrate deploy; then
+        return 0
+      fi
+    fi
+    if container_has_cmd "$prisma" npx; then
+      if $prisma npx prisma migrate deploy; then
+        return 0
+      fi
+    fi
+    if container_has_cmd "$prisma" prisma; then
+      if $prisma prisma migrate deploy; then
+        return 0
+      fi
+    fi
+
+    echo "Aucune commande prisma trouvée dans le container pour le service, tentative locale..."
+    if command -v prisma >/dev/null 2>&1; then
+      eval "prisma migrate deploy"
+      return $?
+    elif command -v npx >/dev/null 2>&1; then
+      eval "npx prisma migrate deploy"
+      return $?
+    elif command -v bunx >/dev/null 2>&1; then
+      eval "bunx prisma migrate deploy"
+      return $?
+    else
+      echo "Commande prisma introuvable localement aussi. Installez prisma ou utilisez npx/bunx." >&2
+      return 1
+    fi
+  else
+    # shellcheck disable=SC2086
+    eval "$prisma migrate deploy"
+  fi
+}
+
+rollback_migration() {
+  local prisma
+  prisma=$(detect_prisma_cmd)
+  if [ -z "$prisma" ]; then
+    echo "Commande prisma introuvable. Installez prisma ou utilisez npx/bunx." >&2
+    return 1
+  fi
+
+  echo "Rollback (reset) va effacer la base de données et réappliquer les migrations si demandé."
+  read -r -p "Confirmez-vous le reset de la base de données ? (oui/non) : " confirm
+  if [ "$confirm" != "oui" ] && [ "$confirm" != "y" ]; then
+    echo "Annulation."
+    return 1
+  fi
+
+  echo "Exécution: prisma migrate reset --force"
+  if [[ "$prisma" == "$DCMD exec"* ]]; then
+    if container_has_cmd "$prisma" bunx; then
+      if $prisma bunx prisma migrate reset --force; then
+        return 0
+      fi
+    fi
+    if container_has_cmd "$prisma" npx; then
+      if $prisma npx prisma migrate reset --force; then
+        return 0
+      fi
+    fi
+    if container_has_cmd "$prisma" prisma; then
+      if $prisma prisma migrate reset --force; then
+        return 0
+      fi
+    fi
+
+    echo "Aucune commande prisma trouvée dans le container pour le service, tentative locale..."
+    if command -v prisma >/dev/null 2>&1; then
+      eval "prisma migrate reset --force"
+      return $?
+    elif command -v npx >/dev/null 2>&1; then
+      eval "npx prisma migrate reset --force"
+      return $?
+    elif command -v bunx >/dev/null 2>&1; then
+      eval "bunx prisma migrate reset --force"
+      return $?
+    else
+      echo "Commande prisma introuvable localement aussi. Installez prisma ou utilisez npx/bunx." >&2
+      return 1
+    fi
+  else
+    # shellcheck disable=SC2086
+    eval "$prisma migrate reset --force"
+  fi
+}
+
+migration_menu() {
+  while true; do
+    echo
+    echo "================= Menu Migrations Prisma ================="
+    echo "1) Créer une migration (create-only)"
+    echo "2) Appliquer toutes les migrations (deploy)"
+    echo "3) Rollback (reset) - destructif"
+    echo "4) Retour"
+    echo "=========================================================="
+    read -r -p "Choix: " mchoice
+    case "$mchoice" in
+      1) create_migration ;;
+      2) apply_migrations ;;
+      3) rollback_migration ;;
+      4) return 0 ;;
+      *) echo "Option inconnue." ;;
+    esac
+  done
+}
+
 main_menu() {
   while true; do
     echo
@@ -76,7 +293,8 @@ main_menu() {
     echo "3) Entrer dans un service (sh/bash)"
     echo "4) Afficher les logs d'un service"
     echo "5) Afficher tous les logs"
-    echo "6) Quitter"
+    echo "6) Migrations Prisma"
+    echo "7) Quitter"
     echo "===================================================="
     read -r -p "Choix: " choice
     case "$choice" in
@@ -137,6 +355,9 @@ main_menu() {
         show_logs ""
         ;;
       6)
+        migration_menu
+        ;;
+      7)
         echo "Quitter."
         exit 0
         ;;
