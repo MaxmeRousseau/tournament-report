@@ -1,0 +1,53 @@
+type Query {
+  tournament(id: uuid!): Tournament
+  tournamentsByPlayer(playerId: uuid!): [Tournament!]!
+
+  round(id: uuid!): Round
+  roundsByTournament(tournamentId: uuid!): [Round!]!
+
+  players: [Player!]!
+  player(id: uuid!): Player
+}
+
+type Mutation {
+  createTournament(name: String!, date: date!): Tournament!
+  createMatch(tournamentId: uuid!): Match!
+  createPlayer(name: String!, email: String!): Player!
+
+}
+
+
+type User {
+  uuid: uuid!
+  email: String!
+  name: String
+  role: String!
+  tournaments: [Tournament!]!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type Tournament {
+  uuid: uuid!
+  name: String!
+  date: DateTime!
+  location: String!
+  description: String
+  userId: uuid!
+  rounds: [Round!]!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+type Round {
+  uuid: uuid!
+  number: Int!
+  tournamentId: uuid!
+  results: String!
+  diceRolls: String!
+  notes: String
+  createdAt: DateTime!
+  updatedAt: DateTime!
+}
+
+
