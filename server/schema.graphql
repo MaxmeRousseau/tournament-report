@@ -1,3 +1,7 @@
+scalar uuid
+scalar date
+scalar DateTime
+
 type Query {
   tournament(id: uuid!): Tournament
   tournamentsByPlayer(playerId: uuid!): [Tournament!]!
@@ -5,14 +9,13 @@ type Query {
   round(id: uuid!): Round
   roundsByTournament(tournamentId: uuid!): [Round!]!
 
-  players: [Player!]!
-  player(id: uuid!): Player
+  players: [User!]!
+  player(id: uuid!): User
 }
 
 type Mutation {
   createTournament(name: String!, date: date!): Tournament!
-  createMatch(tournamentId: uuid!): Match!
-  createPlayer(name: String!, email: String!): Player!
+  createMatch(tournamentId: uuid!): Round!
 
 }
 

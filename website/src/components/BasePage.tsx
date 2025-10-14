@@ -9,11 +9,13 @@ function BasePage() {
             {/* ... éléments ... */}
           </ul>
 
-          <button className="btn-gradient group ml-auto">
-            <span className="btn-gradient-inner">
-              Login
-            </span>
-          </button>
+          <a href="https://discord.com/oauth2/authorize?client_id=1427616121095323669&response_type=code&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fcallback&scope=identify">
+            <button className="btn-gradient group ml-auto">
+              <span className="btn-gradient-inner">
+                Login
+              </span>
+            </button>
+          </a>
         </div>
       </nav>
       <Outlet />
