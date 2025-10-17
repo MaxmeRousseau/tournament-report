@@ -51,16 +51,17 @@ app.get('/api/auth/callback', async (req, res) => {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Authorization': `Basic ${basicAuth}`
       },
-      body: params.toString() // ou juste `params`
+      body: params.toString()
     });
 
-    const text = await tokenResponse.text(); // lire le body pour debug
+    const text = await tokenResponse.text();
     if (!tokenResponse.ok) {
       console.error('Discord token error', tokenResponse.status, text);
       return res.status(tokenResponse.status).send(text);
     }
 
     const data = JSON.parse(text);
+    console.log('Discord token data', data);
     // data contient access_token, refresh_token, expires_in, etc.
     res.redirect(`${process.env.FRONTEND_URL}?access_token=${data.access_token}&refresh_token=${data.refresh_token}`);
   } catch (err) {
